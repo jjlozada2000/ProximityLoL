@@ -7,7 +7,7 @@ from lcu import get_lcu_session
 from game_state import get_game_data, get_teammate_positions, calculate_distance, distance_to_volume
 from voice import ProximityVoice
 
-SERVER_URL = os.environ.get("PROXIMITY_SERVER", "http://localhost:3000")
+SERVER_URL = os.environ.get("PROXIMITY_SERVER", "https://proximitylol-production.up.railway.app")
 POLL_INTERVAL = 0.5  # seconds between position updates
 
 class ProximityApp:
