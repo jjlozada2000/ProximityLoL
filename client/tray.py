@@ -3,12 +3,10 @@ import time
 import pystray
 from PIL import Image, ImageDraw
 from app import ProximityApp
+from ui import ProximityUI
 
 def create_icon_image(color):
-    """
-    Draw a simple circle icon in the given color.
-    Green = connected, Yellow = connecting, Gray = idle, Red = error.
-    """
+    """Draw a simple circle icon in the given color."""
     size = 64
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -16,11 +14,11 @@ def create_icon_image(color):
     return img
 
 COLORS = {
-    "idle":       (120, 120, 120, 255),  # Gray
-    "connecting": (255, 200, 0,   255),  # Yellow
-    "connected":  (0,   200, 80,  255),  # Green
-    "in_game":    (0,   200, 80,  255),  # Green
-    "error":      (220, 50,  50,  255),  # Red
+    "idle":       (120, 120, 120, 255),
+    "connecting": (255, 200, 0,   255),
+    "connected":  (0,   200, 80,  255),
+    "in_game":    (0,   200, 80,  255),
+    "error":      (220, 50,  50,  255),
 }
 
 STATUS_LABELS = {
@@ -31,9 +29,11 @@ STATUS_LABELS = {
     "error":      "ProximityLoL — Connection error",
 }
 
+
 class TrayApp:
     def __init__(self):
         self.app = ProximityApp()
+        self.ui = ProximityUI(self.app)
         self.icon = None
 
     def build_menu(self):
@@ -44,12 +44,21 @@ class TrayApp:
                 enabled=False
             ),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Show Window", self._show_window),
             pystray.MenuItem("Quit", self.quit)
         )
 
-    def quit(self, icon, item):
+    def quit(self, icon=None, item=None):
         self.app.stop()
-        self.icon.stop()
+        self.ui._running = False
+        if self.icon:
+            self.icon.stop()
+
+    def _show_window(self, icon=None, item=None):
+        """Bring the UI window back if it was minimized."""
+        if self.ui.root:
+            self.ui.root.deiconify()
+            self.ui.root.lift()
 
     def update_icon_loop(self):
         """Continuously update tray icon color based on app status."""
@@ -73,11 +82,17 @@ class TrayApp:
             menu=self.build_menu()
         )
 
-        # Start icon updater thread
+        # Run tray icon in background thread
+        threading.Thread(target=self.icon.run, daemon=True).start()
+        # Run icon color updater in background thread
         threading.Thread(target=self.update_icon_loop, daemon=True).start()
 
-        print("ProximityLoL tray app running. Right-click the tray icon to quit.")
-        self.icon.run()
+        print("ProximityLoL running. Close the window to minimize to tray.")
+        # UI runs on main thread (required by tkinter)
+        self.ui.start()
+
+        # When UI window is closed, clean up
+        self.quit()
 
 
 if __name__ == '__main__':

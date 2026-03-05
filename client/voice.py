@@ -12,11 +12,13 @@ NUM_CHANNELS = 1
 CHUNK_DURATION_MS = 10
 SAMPLES_PER_CHUNK = int(SAMPLE_RATE * CHUNK_DURATION_MS / 1000)
 
+
 class ProximityVoice:
     def __init__(self, server_url):
-        self.server_url = server_url  # Your Render/local signaling server
+        self.server_url = server_url
         self.room = None
         self.running = False
+        self.self_muted = False
         self.participant_volumes = {}  # { identity: float 0.0-1.0 }
         self.audio_streams = {}        # { identity: AudioStream }
         self._loop = None
@@ -38,7 +40,6 @@ class ProximityVoice:
 
         self.room = rtc.Room()
 
-        # Set up event handlers
         @self.room.on("participant_connected")
         def on_participant_connected(participant):
             print(f"Teammate connected: {participant.identity}")
@@ -63,7 +64,6 @@ class ProximityVoice:
         await self.room.connect(livekit_url, token)
         print(f"Connected to room: {self.room.name}")
 
-        # Start publishing microphone
         await self._publish_microphone()
         self.running = True
 
@@ -77,7 +77,6 @@ class ProximityVoice:
         await self.room.local_participant.publish_track(track, options)
         print("Microphone published.")
 
-        # Run mic capture in background thread
         threading.Thread(
             target=self._capture_mic,
             args=(source,),
@@ -89,13 +88,24 @@ class ProximityVoice:
         def callback(indata, frames, time, status):
             if not self.running:
                 raise sd.CallbackStop()
-            audio_data = (indata[:, 0] * 32767).astype(np.int16)
-            frame = rtc.AudioFrame(
-                data=audio_data.tobytes(),
-                sample_rate=SAMPLE_RATE,
-                num_channels=NUM_CHANNELS,
-                samples_per_channel=len(audio_data)
-            )
+
+            if self.self_muted:
+                # Send silence when muted
+                frame = rtc.AudioFrame(
+                    data=bytes(SAMPLES_PER_CHUNK * 2),
+                    sample_rate=SAMPLE_RATE,
+                    num_channels=NUM_CHANNELS,
+                    samples_per_channel=SAMPLES_PER_CHUNK
+                )
+            else:
+                audio_data = (indata[:, 0] * 32767).astype(np.int16)
+                frame = rtc.AudioFrame(
+                    data=audio_data.tobytes(),
+                    sample_rate=SAMPLE_RATE,
+                    num_channels=NUM_CHANNELS,
+                    samples_per_channel=len(audio_data)
+                )
+
             asyncio.run_coroutine_threadsafe(
                 source.capture_frame(frame),
                 self._loop
@@ -113,8 +123,6 @@ class ProximityVoice:
 
     async def _play_audio_stream(self, identity, stream):
         """Play incoming audio from a participant, scaled by volume."""
-        output_buffer = []
-
         async for event in stream:
             if not self.running:
                 break
@@ -127,11 +135,7 @@ class ProximityVoice:
             sd.play(audio_array, samplerate=SAMPLE_RATE, blocking=False)
 
     def set_participant_volume(self, identity, volume):
-        """
-        Set volume for a participant (0.0 = silent, 1.0 = full).
-        Called by the main app based on proximity calculations.
-        """
-        # Normalize identity for matching (gameName only)
+        """Set volume for a participant (0.0 = silent, 1.0 = full)."""
         self.participant_volumes[identity] = max(0.0, min(1.0, volume))
 
     async def disconnect(self):
@@ -148,10 +152,6 @@ class ProximityVoice:
 
 
 if __name__ == '__main__':
-    # Quick connection test - won't work without a real match ID
-    # but will confirm imports and token fetch work
-    import os
-
     SERVER_URL = os.environ.get("PROXIMITY_SERVER", "http://localhost:3000")
     voice = ProximityVoice(SERVER_URL)
 
