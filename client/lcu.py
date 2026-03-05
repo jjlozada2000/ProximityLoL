@@ -71,11 +71,12 @@ def get_lcu_session():
 
         if gameflow_resp.status_code != 200:
             # Not in a game
-            return {'summoner_name': summoner_name, 'match_id': None, 'in_game': False}
+            return {'summoner_name': summoner_name, 'match_id': None, 'in_game': None}
 
         gameflow = gameflow_resp.json()
+        print(f"Current phase: {gameflow.get('phase', 'unknown')}")  # DEBUG
         phase = gameflow.get('phase', '')
-        in_game = phase == 'InProgress'
+        in_game = phase in ('InProgress', 'InProgress', 'GameStart', 'FailedToLaunch')
 
         match_id = None
         if in_game:

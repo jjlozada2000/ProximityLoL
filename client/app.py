@@ -51,33 +51,44 @@ class ProximityApp:
             await asyncio.sleep(POLL_INTERVAL)
 
     async def _tick(self):
-        # Step 1: Check if League is running
-        if not self.is_league_running():
-            if self.in_game:
+        try:
+            game_data = get_game_data()
+            in_game_now = game_data is not None
+
+            if not self.summoner_name:
+                try:
+                    session = get_lcu_session()
+                    if session:
+                        self.summoner_name = session['summoner_name']
+                except Exception as e:
+                    print(f"LCU error: {e}")
+
+            if in_game_now and not self.in_game:
+                try:
+                    session = get_lcu_session()
+                    if session and session.get('match_id'):
+                        self.match_id = session['match_id']
+                    else:
+                        game_data_inner = game_data.get('gameData', {})
+                        self.match_id = str(game_data_inner.get('gameId', 'unknown'))
+                except Exception as e:
+                    print(f"Match ID error: {e}")
+                    self.match_id = 'unknown'
+                await self._on_game_start()
+
+            elif not in_game_now and self.in_game:
                 await self._on_game_end()
-            self.status = "idle"
-            return
 
-        # Step 2: Get LCU session (summoner name + match state)
-        session = get_lcu_session()
-        if not session:
-            self.status = "idle"
-            return
+            if in_game_now and self.voice.running:
+                try:
+                    await self._update_proximity()
+                except Exception as e:
+                    print(f"Proximity error: {e}")
 
-        self.summoner_name = session['summoner_name']
-
-        # Step 3: Check if we just entered a game
-        if session['in_game'] and not self.in_game:
-            self.match_id = session['match_id']
-            await self._on_game_start()
-
-        # Step 4: Check if we just left a game
-        elif not session['in_game'] and self.in_game:
-            await self._on_game_end()
-
-        # Step 5: If in game, update proximity volumes
-        if self.in_game and self.voice.running:
-            await self._update_proximity()
+        except Exception as e:
+            import traceback
+            print(f"Tick error: {e}")
+            traceback.print_exc()
 
     async def _on_game_start(self):
         print(f"Game started! Match ID: {self.match_id}")
@@ -106,16 +117,18 @@ class ProximityApp:
     async def _update_proximity(self):
         """Poll game positions and update teammate volumes."""
         game_data = get_game_data()
-        if not game_data:
+        if not game_data or not isinstance(game_data, dict):
             return
 
         my_pos = None
-        # Find local player position
         for player in game_data.get('allPlayers', []):
+            if not isinstance(player, dict):
+                continue
             game_name = self.summoner_name.split('#')[0].lower()
             if player.get('riotId', '').split('#')[0].lower() == game_name:
                 pos = player.get('position', {})
-                my_pos = (pos.get('x', 0), pos.get('y', 0), pos.get('z', 0))
+                if isinstance(pos, dict):
+                    my_pos = (pos.get('x', 0), pos.get('y', 0), pos.get('z', 0))
                 break
 
         if not my_pos:

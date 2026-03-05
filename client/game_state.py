@@ -17,6 +17,10 @@ def get_game_data():
             timeout=1
         )
         resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            return None
+        return data
         return resp.json()
     except Exception:
         return None

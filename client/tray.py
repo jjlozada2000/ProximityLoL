@@ -54,7 +54,7 @@ class TrayApp:
     def update_icon_loop(self):
         """Continuously update tray icon color based on app status."""
         last_status = None
-        while self.icon and self.icon.visible:
+        while self.icon:
             status = self.app.status
             if status != last_status:
                 color = COLORS.get(status, COLORS["idle"])
